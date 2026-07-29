@@ -12,17 +12,32 @@
 #
 # Each fragment line is "origin_tag destination port":
 #   devel gitea-forge-host 3000
-# allows qubes tagged "devel" to call local.ConnectTCP+3000 against
-# qubes tagged "gitea-forge-host". Both sides are Qubes RPC Policy 4.0
-# @tag: references (natively supported on either side of a policy
-# line -- unlike qvm-firewall, which only takes a literal VM name, no
-# per-qube enumeration is needed here), EXCEPT the literal string
-# "dom0" on the destination side, which is emitted as-is (unquoted
-# "dom0", not "@tag:dom0") -- whether dom0 itself can even carry a
-# qvm-tag is unverified from this package's development environment
-# (no live qubesd to check against), whereas literal "dom0" as a qrexec
-# policy destination is the same syntax qubes-rpc-user's own
-# pre-factoring policy already used.
+#
+# OR semantics: either tag alone is sufficient, on either side. A qube
+# carrying "devel" may call local.ConnectTCP+3000 against ANY qube
+# (not only ones tagged gitea-forge-host); a qube carrying
+# "gitea-forge-host" may be called by ANY qube on that port (not only
+# ones tagged devel). The two tags are not a matched pair that both
+# have to hold at once -- each is independently sufficient. This is
+# broader than a same-line-both-sides-must-match whitelist: tagging a
+# qube "devel" grants it that port against everyone, and tagging a
+# qube "gitea-forge-host" opens that port on it to everyone, not just
+# to each other specifically.
+#
+# Expands to 4 lines per tag-based fragment (one for each tag as
+# source-side-open, one for each tag as destination-side-open) --
+# Qubes RPC Policy 4.0 has no OR combinator within a single
+# source/destination field, so this is the only way to express it.
+#
+# EXCEPT the literal string "dom0" on the destination side, which is
+# emitted as a single, unexpanded "origin_tag -> dom0" line (source
+# must carry origin_tag; dest is fixed dom0, not opened to @anyvm) --
+# dom0 does not participate in the OR pool as a taggable destination:
+# whether dom0 itself can even carry a qvm-tag is unverified from this
+# package's development environment (no live qubesd to check against),
+# and "anyone may reach dom0 on this port" is not something to expand
+# into automatically regardless. Literal "dom0" is the same syntax
+# qubes-rpc-user's own pre-factoring policy already used.
 set -eu
 
 CONFD=/etc/qrexec-tcp-bridge/access.conf.d
@@ -40,17 +55,22 @@ command -v qubesd >/dev/null 2>&1 || { echo "generate-policy.sh: qubesd not pres
     echo "## ${CONFD}/*.conf -- do not edit by hand, edit a fragment there"
     echo "## and re-run generate-policy.sh instead."
     echo "##"
+    echo "## OR semantics: either tag alone is sufficient (not a matched"
+    echo "## pair) -- see the comment at the top of generate-policy.sh."
+    echo "##"
     for f in "${CONFD}"/*.conf; do
         [ -e "$f" ] || continue
         echo "## from $(basename "$f")"
         while read -r origin dest port; do
             case "$origin" in ''|'#'*) continue ;; esac
             if [ "$dest" = "dom0" ]; then
-                dest_token="dom0"
+                echo "local.ConnectTCP +${port} @tag:${origin} dom0 allow"
             else
-                dest_token="@tag:${dest}"
+                echo "local.ConnectTCP +${port} @tag:${origin} @anyvm allow"
+                echo "local.ConnectTCP +${port} @anyvm @tag:${origin} allow"
+                echo "local.ConnectTCP +${port} @tag:${dest} @anyvm allow"
+                echo "local.ConnectTCP +${port} @anyvm @tag:${dest} allow"
             fi
-            echo "local.ConnectTCP +${port} @tag:${origin} ${dest_token} allow"
         done < "$f"
     done
     echo "local.ConnectTCP * @anyvm @anyvm deny"
