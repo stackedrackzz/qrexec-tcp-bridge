@@ -1,0 +1,26 @@
+#!/bin/sh
+# Generic qrexec RPC service: bridges this call's stdio to
+# 127.0.0.1:<port> on whichever qube this is installed on, where
+# <port> is the RPC argument from a call shaped like
+# "local.ConnectTCP+<port>" (e.g. ai-stack-gpu-tunnel.service's
+# `qrexec-client-vm dom0 local.ConnectTCP+8079`, or a devel qube
+# calling `qrexec-client-vm git-server local.ConnectTCP+3000`).
+#
+# Same script regardless of target -- dom0 and regular qubes alike.
+# What's actually reachable through it, and by whom, is entirely
+# governed by whatever qrexec policy (always dom0-side, per Qubes'
+# own architecture) references this service -- see qubes-rpc-user
+# (dom0 access) and gitea-tor-forge (git-server access) for the
+# policies that currently use this.
+#
+# RECONSTRUCTED, NOT VERIFIED AGAINST A REAL DOM0 FILE: this package
+# was built from a session with no working qrexec connection to any
+# real Qubes dom0, so this could not be diffed against whatever's
+# actually installed at /etc/qubes-rpc/local.ConnectTCP there. This is
+# the standard community implementation of this exact pattern. Diff it
+# against a real dom0's file before trusting this package to reproduce
+# it, and remove this notice once confirmed identical (or replace the
+# body below with the real contents if they differ).
+
+port="${QREXEC_SERVICE_ARGUMENT:-$1}"
+exec socat STDIO TCP:127.0.0.1:"${port}"
